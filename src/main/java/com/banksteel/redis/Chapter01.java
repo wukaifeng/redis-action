@@ -2,7 +2,6 @@ package com.banksteel.redis;
 
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.ZParams;
-
 import java.util.*;
 
 public class Chapter01 {
@@ -15,37 +14,63 @@ public class Chapter01 {
     }
 
     public void run() {
-        Jedis conn = new Jedis("localhost");
+        Jedis conn = new Jedis("localhost", 6388);
         conn.select(15);
+        // conn.flushDB();
 
-        String articleId = postArticle(
-            conn, "username", "A title", "http://www.google.com");
+        // 发布文章1
+        String articleId = postArticle(conn, "username", "A title", "http://www.google.com");
         System.out.println("We posted a new article with id: " + articleId);
         System.out.println("Its HASH looks like:");
-        Map<String,String> articleData = conn.hgetAll("article:" + articleId);
-        for (Map.Entry<String,String> entry : articleData.entrySet()){
+        Map<String, String> articleData = conn.hgetAll("article:" + articleId);
+        for (Map.Entry<String, String> entry : articleData.entrySet()) {
+            System.out.println("  " + entry.getKey() + ": " + entry.getValue());
+        }
+
+        // 发布问题2
+        articleId = postArticle(conn, "username", "A title", "http://www.google.com");
+        System.out.println("We posted a new article with id: " + articleId);
+        System.out.println("Its HASH looks like:");
+        articleData = conn.hgetAll("article:" + articleId);
+        for (Map.Entry<String, String> entry : articleData.entrySet()) {
             System.out.println("  " + entry.getKey() + ": " + entry.getValue());
         }
 
         System.out.println();
-
+        articleId = "1";
+        // // 文章投票
         articleVote(conn, "other_user", "article:" + articleId);
         String votes = conn.hget("article:" + articleId, "votes");
         System.out.println("We voted for the article, it now has votes: " + votes);
         assert Integer.parseInt(votes) > 1;
 
         System.out.println("The currently highest-scoring articles are:");
-        List<Map<String,String>> articles = getArticles(conn, 1);
+        // 分页获取文章 根据分数倒排序
+        List<Map<String, String>> articles = getArticles(conn, 1);
+        // 打印文章
         printArticles(articles);
         assert articles.size() >= 1;
 
-        addGroups(conn, articleId, new String[]{"new-group"});
+        // 添加文章到组
+        addGroups(conn, articleId, new String[] {"new-group"});
         System.out.println("We added the article to a new group, other articles include:");
+
+        //
         articles = getGroupArticles(conn, "new-group", 1);
         printArticles(articles);
         assert articles.size() >= 1;
     }
 
+    /**
+     * 发布文章
+     * 
+     * @param conn redis链接
+     * 
+     * @param user 用户名
+     * @param title 文章标题
+     * @param link 文章链接
+     * @return
+     */
     public String postArticle(Jedis conn, String user, String title, String link) {
         String articleId = String.valueOf(conn.incr("article:"));
 
@@ -55,7 +80,7 @@ public class Chapter01 {
 
         long now = System.currentTimeMillis() / 1000;
         String article = "article:" + articleId;
-        HashMap<String,String> articleData = new HashMap<String,String>();
+        HashMap<String, String> articleData = new HashMap<String, String>();
         articleData.put("title", title);
         articleData.put("link", link);
         articleData.put("user", user);
@@ -68,32 +93,48 @@ public class Chapter01 {
         return articleId;
     }
 
+    /**
+     * 文章投票 注：
+     * 
+     * @param conn redis 链接
+     * @param user 投票人
+     * @param article 投票的文章
+     */
     public void articleVote(Jedis conn, String user, String article) {
         long cutoff = (System.currentTimeMillis() / 1000) - ONE_WEEK_IN_SECONDS;
-        if (conn.zscore("time:", article) < cutoff){
+        if (conn.zscore("time:", article) < cutoff) {
             return;
         }
 
         String articleId = article.substring(article.indexOf(':') + 1);
+        /**
+         * conn.sadd("voted:" + articleId, user) == 1 是用来判断该用户是否已经投过票了，若投过票则返回0 ，票数不会增加
+         */
         if (conn.sadd("voted:" + articleId, user) == 1) {
             conn.zincrby("score:", VOTE_SCORE, article);
             conn.hincrBy(article, "votes", 1);
         }
     }
 
-
-    public List<Map<String,String>> getArticles(Jedis conn, int page) {
+    /**
+     * 分页获取文章
+     * 
+     * @param conn redis 链接
+     * @param page 页码
+     * @return
+     */
+    public List<Map<String, String>> getArticles(Jedis conn, int page) {
         return getArticles(conn, page, "score:");
     }
 
-    public List<Map<String,String>> getArticles(Jedis conn, int page, String order) {
+    public List<Map<String, String>> getArticles(Jedis conn, int page, String order) {
         int start = (page - 1) * ARTICLES_PER_PAGE;
         int end = start + ARTICLES_PER_PAGE - 1;
 
         Set<String> ids = conn.zrevrange(order, start, end);
-        List<Map<String,String>> articles = new ArrayList<Map<String,String>>();
-        for (String id : ids){
-            Map<String,String> articleData = conn.hgetAll(id);
+        List<Map<String, String>> articles = new ArrayList<Map<String, String>>();
+        for (String id : ids) {
+            Map<String, String> articleData = conn.hgetAll(id);
             articleData.put("id", id);
             articles.add(articleData);
         }
@@ -108,11 +149,14 @@ public class Chapter01 {
         }
     }
 
-    public List<Map<String,String>> getGroupArticles(Jedis conn, String group, int page) {
+    public List<Map<String, String>> getGroupArticles(Jedis conn, String group, int page) {
         return getGroupArticles(conn, group, page, "score:");
     }
 
-    public List<Map<String,String>> getGroupArticles(Jedis conn, String group, int page, String order) {
+    /**
+     * 交集存储
+     */
+    public List<Map<String, String>> getGroupArticles(Jedis conn, String group, int page, String order) {
         String key = order + group;
         if (!conn.exists(key)) {
             ZParams params = new ZParams().aggregate(ZParams.Aggregate.MAX);
@@ -122,11 +166,11 @@ public class Chapter01 {
         return getArticles(conn, page, key);
     }
 
-    private void printArticles(List<Map<String,String>> articles){
-        for (Map<String,String> article : articles){
+    private void printArticles(List<Map<String, String>> articles) {
+        for (Map<String, String> article : articles) {
             System.out.println("  id: " + article.get("id"));
-            for (Map.Entry<String,String> entry : article.entrySet()){
-                if (entry.getKey().equals("id")){
+            for (Map.Entry<String, String> entry : article.entrySet()) {
+                if (entry.getKey().equals("id")) {
                     continue;
                 }
                 System.out.println("    " + entry.getKey() + ": " + entry.getValue());
