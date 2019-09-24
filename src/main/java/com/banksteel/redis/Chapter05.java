@@ -3,6 +3,8 @@ import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import org.apache.commons.csv.CSVParser;
 import org.javatuples.Pair;
+import org.junit.Before;
+import org.junit.Test;
 import redis.clients.jedis.*;
 
 import java.io.File;
@@ -27,29 +29,48 @@ public class Chapter05 {
     static{
         ISO_FORMAT.setTimeZone(TimeZone.getTimeZone("UTC"));
     }
-
-    public static final void main(String[] args)
-        throws InterruptedException
-    {
-        new Chapter05().run();
+    private Jedis conn = null;
+    @Before
+    public void before() {
+        conn = new Jedis("localhost");
+        conn.select(15);
     }
 
-    public void run()
-        throws InterruptedException
-    {
-        Jedis conn = new Jedis("localhost");
-        conn.select(15);
-
+    @Test
+    public void testLogRecent() {
         testLogRecent(conn);
+    }
+    
+    @Test
+    public void testLogCommon() {
         testLogCommon(conn);
+    }
+    
+    @Test
+    public void testCounters() throws InterruptedException {
         testCounters(conn);
+    }
+    @Test
+    public void testStats() throws InterruptedException {
         testStats(conn);
+    }
+    @Test
+    public void testAccessTime() throws InterruptedException {
         testAccessTime(conn);
+    }
+    @Test
+    public void testIpLookup() throws InterruptedException {
         testIpLookup(conn);
+    }
+    @Test
+    public void testIsUnderMaintenance() throws InterruptedException {
         testIsUnderMaintenance(conn);
+    }
+    @Test
+    public void testConfig() throws InterruptedException {
         testConfig(conn);
     }
-
+    
     public void testLogRecent(Jedis conn) {
         System.out.println("\n----- testLogRecent -----");
         System.out.println("Let's write a few logs to the recent log");
