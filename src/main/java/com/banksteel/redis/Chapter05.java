@@ -60,7 +60,6 @@ public class Chapter05 {
     public void testStats() throws InterruptedException {
         testStats(conn);
     }
-
     @Test
     public void testAccessTime() throws InterruptedException {
         testAccessTime(conn);
